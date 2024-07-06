@@ -9,13 +9,13 @@ from langchain_community.vectorstores import Chroma
 from langchain_core.prompts import PromptTemplate
 from langchain_core.documents import Document
 from langchain_groq import ChatGroq
-import os,asyncio,warnings,shutil,uuid
+import os,asyncio,warnings,uuid
 warnings.filterwarnings("ignore")
 
-def syncdata(data_dir):
-    if pdfs:=[os.path.join(data_dir, file) for file in os.listdir(data_dir) if file.endswith(".pdf")]:
-        return pdfs[:5]
-
+os.environ["LANGCHAIN_TRACING_V2"]="true"
+os.environ["LANGCHAIN_ENDPOINT"]="https://api.smith.langchain.com"
+os.environ["LANGCHAIN_API_KEY"]=os.getenv("LANGCHAIN_API_KEY")
+os.environ["LANGCHAIN_PROJECT"]="CV"
 
 def flatteningdocs(data):
     return [item for sublist in data for item in sublist]
@@ -36,25 +36,17 @@ def get_data(file_path):
     else:
         return pages
 
-async def main(pdfs):
+async def main(pdfs_dir):
+    pdfs_path = [f"{pdfs_dir}/{pdf}" for pdf in os.listdir(pdfs_dir)]
     content_chain = RunnablePassthrough() | get_data
-    return flatteningdocs(await content_chain.abatch(pdfs))
+    return flatteningdocs(await content_chain.abatch(pdfs_path))
 
-def find_percent(number):
-    return int(number * 0.70)
-
-def indexing(content,pdfcount):
-    selected = find_percent(pdfcount)
+def indexing(content):
     collection_name = str(uuid.uuid4())
     model_name = "sentence-transformers/all-mpnet-base-v2"
     embedding = HuggingFaceEmbeddings(model_name=model_name)
-
-    return Chroma.from_documents(embedding=embedding,documents=content,collection_name=collection_name).as_retriever(
-        search_kwargs={'k':selected})
-
-# print("Total PDF's are:",pdfcounts)
-# print("Top Seventy Percent will be selected:",selected)
-
+    
+    return Chroma.from_documents(embedding=embedding,documents=content,persist_directory="db",collection_name=collection_name)
 
 Groq = ChatGroq(
     temperature=0,
@@ -72,39 +64,28 @@ def _get_default_chain_prompt() -> PromptTemplate:
         output_parser=BooleanOutputParser())
 
 _filter = LLMChainFilter.from_llm(Groq,prompt=_get_default_chain_prompt())
+def find_percent(pdfcount):
+    if pdfcount > 20:
+        return int(pdfcount * 0.70)
+    else:
+        return int(pdfcount)
 
-def compression_retriever(retriever):
+def compression_retriever(retriever,pdfcount):
+    selected = find_percent(pdfcount)
 
     return ContextualCompressionRetriever(
-        base_compressor=_filter, base_retriever=retriever)
+        base_compressor=_filter, base_retriever=retriever.as_retriever(
+        search_kwargs={'k':selected}))
 
-# from utils import des
-
-def compression(job_description,data_dir):
-    if os.path.isdir(data_dir):
-        pdfs_path = syncdata(data_dir)
-        pdfs_content = asyncio.run(main(pdfs_path))
+def compression(job_description,pdfs_dir):
+        pdfs_content = asyncio.run(main(pdfs_dir))
 
         print("Indexing...")
-        retriever = indexing(pdfs_content,len(pdfs_content))
+        retriever = indexing(pdfs_content)
 
         print("Compression...")
-        compressed_docs = compression_retriever(retriever).invoke(job_description)
+        compressed_docs = compression_retriever(retriever,len(pdfs_content)).invoke(job_description)
 
         shortlisted_cvs = [cv.metadata['source'] for cv in compressed_docs]
-        destination = 'shortlisted_resume'
-        os.makedirs(destination,exist_ok=True)
-
-        for file in os.listdir(destination):
-            os.remove(os.path.join(destination, file))
-
-        for filename in shortlisted_cvs:
-            shutil.copy(filename, destination)
         retriever.delete_collection()
-
-def calculate_percentage(selected, total):
-    return int((selected / total) * 100)
-
-compression('i am looking for job','data')
-
-# percentage = calculate_percentage(len(shortlisted_cvs), pdfcounts)
+        return shortlisted_cvs
