@@ -12,7 +12,6 @@ def process_files(job_description, files_dir):
     from app import compression
     return compression(job_description, files_dir)
 
-
 # Get the secret key from environment variable
 SECRET_KEY = "123"
 def cleanup_directory(path: str):

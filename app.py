@@ -1,7 +1,7 @@
+from langchain_community.document_loaders import UnstructuredFileLoader
 from langchain.retrievers.document_compressors import LLMChainFilter
 from langchain.output_parsers.boolean import BooleanOutputParser
 from langchain.retrievers import ContextualCompressionRetriever
-from langchain_community.document_loaders import PyPDFLoader
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.runnables import RunnablePassthrough
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -21,20 +21,15 @@ def flatteningdocs(data):
     return [item for sublist in data for item in sublist]
 
 def get_data(file_path):
-    pages = PyPDFLoader(file_path=file_path).load()
-    if len(pages) > 1:
-        pdfstring = ""
-        metadata = {}
-        for page in pages:
-            pdfstring += page.page_content
-            metadata.update(page.metadata)
-
-        return [Document(
-            page_content=pdfstring,
-            metadata=metadata)]
+    try:
+        pages = UnstructuredFileLoader(file_path=file_path).load()
+        if pages[0].page_content:
+            return pages
         
-    else:
-        return pages
+        return []
+    
+    except Exception as e:
+        return []
 
 async def main(pdfs_dir):
     pdfs_path = [f"{pdfs_dir}/{pdf}" for pdf in os.listdir(pdfs_dir)]
@@ -50,12 +45,21 @@ def indexing(content):
 
 Groq = ChatGroq(
     temperature=0,
-    model="llama3-70b-8192").with_fallbacks([ChatGoogleGenerativeAI(model="gemini-1.5-flash",google_api_key=os.getenv("google_api_key"))])
+    max_retries=10,
+    model="llama3-70b-8192").with_fallbacks([ChatGoogleGenerativeAI(model="gemini-1.5-flash",google_api_key=os.getenv("google_api_key"),temperature=0)])
 
-prompt_template = """You are a powerfull assistant your task is to check weather the given CV match the given job requirements.Return only Yes if it match else return No.
-<job description>{question}</job description>
-# <cv>{context}</cv>
-> Relevant (YES / NO):"""
+prompt_template = """You are a powerful HR assistant. Your task is to review the given CV and determine if it matches the job requirements specified in the job description. Return only "YES" if it matches all the requirements; otherwise, return "NO".Please do your best it is very important to my career.if both or any of feild is empty then also return NO.
+
+<job description>
+{question}
+</job description>
+
+<cv>
+{context}
+</cv>
+
+> Relevant (YES / NO):
+"""
 
 def _get_default_chain_prompt() -> PromptTemplate:
     return PromptTemplate(
