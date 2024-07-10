@@ -1,24 +1,24 @@
+from langchain_core.output_parsers.openai_tools import PydanticToolsParser
 from langchain_community.document_loaders import UnstructuredFileLoader
-from langchain.retrievers.document_compressors import LLMChainFilter
-from langchain.output_parsers.boolean import BooleanOutputParser
-from langchain.retrievers import ContextualCompressionRetriever
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.runnables import RunnablePassthrough
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.vectorstores import Chroma
+from langchain_core.pydantic_v1 import BaseModel, Field
 from langchain_core.prompts import PromptTemplate
-from langchain_core.documents import Document
+from langchain.prompts import PromptTemplate
 from langchain_groq import ChatGroq
-import os,asyncio,warnings,uuid
+import os,asyncio,warnings
+
 warnings.filterwarnings("ignore")
 
 os.environ["LANGCHAIN_TRACING_V2"]="true"
 os.environ["LANGCHAIN_ENDPOINT"]="https://api.smith.langchain.com"
-os.environ["LANGCHAIN_API_KEY"]=os.getenv("LANGCHAIN_API_KEY")
-os.environ["LANGCHAIN_PROJECT"]="CV"
+os.environ["LANGCHAIN_API_KEY"]= "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"
+os.environ["LANGCHAIN_PROJECT"]="default"
 
-def flatteningdocs(data):
-    return [item for sublist in data for item in sublist]
+def flatteningdocs(data,job_description):
+    flatten =  [item for sublist in data for item in sublist]
+    return [{"source":cv.metadata['source'],"cv":cv.page_content,"job_des":job_description} for cv in flatten]
 
 def get_data(file_path):
     try:
@@ -31,65 +31,65 @@ def get_data(file_path):
     except Exception as e:
         return []
 
-async def main(pdfs_dir):
+async def main(pdfs_dir,job_description):
     pdfs_path = [f"{pdfs_dir}/{pdf}" for pdf in os.listdir(pdfs_dir)]
     content_chain = RunnablePassthrough() | get_data
-    return flatteningdocs(await content_chain.abatch(pdfs_path))
+    return flatteningdocs(await content_chain.abatch(pdfs_path),job_description)
 
-def indexing(content):
-    collection_name = str(uuid.uuid4())
-    model_name = "sentence-transformers/all-mpnet-base-v2"
-    embedding = HuggingFaceEmbeddings(model_name=model_name)
-    
-    return Chroma.from_documents(embedding=embedding,documents=content,persist_directory="db",collection_name=collection_name)
-
-Groq = ChatGroq(
-    temperature=0,
-    max_retries=10,
-    model="llama3-70b-8192").with_fallbacks([ChatGoogleGenerativeAI(model="gemini-1.5-flash",google_api_key=os.getenv("google_api_key"),temperature=0)])
-
-prompt_template = """You are a powerful HR assistant. Your task is to review the given CV and determine if it matches the job requirements specified in the job description. Return only "YES" if it matches all the requirements; otherwise, return "NO".Please do your best it is very important to my career.if both or any of feild is empty then also return NO.
-
+prompt_template = """
 <job description>
-{question}
+{job_des}
 </job description>
-
+------------
 <cv>
-{context}
+{cv}
 </cv>
-
-> Relevant (YES / NO):
 """
 
-def _get_default_chain_prompt() -> PromptTemplate:
-    return PromptTemplate(
+template = PromptTemplate(
         template=prompt_template,
-        input_variables=["question", "context"],
-        output_parser=BooleanOutputParser())
+        input_variables=["job_des", "cv"])
 
-_filter = LLMChainFilter.from_llm(Groq,prompt=_get_default_chain_prompt())
-def find_percent(pdfcount):
-    if pdfcount > 20:
-        return int(pdfcount * 0.70)
-    else:
-        return int(pdfcount)
+# Note that the docstrings here are crucial, as they will be passed along
+# to the model along with the class name.
+class cv_score(BaseModel):
+    """You are a powerful HR assistant. Your task is to review the given CV and determine if it matches the job requirements specified in the job description, and give a score between 0 and 1 based on their relevancy. Please do your best; it is very important for my career. If both or any of the fields are empty, then also return 0. Also, return the matching score between 0 and 1.
+    > Relevant Score Between (0 and 1):
+    """
 
-def compression_retriever(retriever,pdfcount):
-    selected = find_percent(pdfcount)
+    # selection: str = Field(..., description="YES/NO")
+    score: str = Field(..., description="Give a score to the CV between 0 and 1")
 
-    return ContextualCompressionRetriever(
-        base_compressor=_filter, base_retriever=retriever.as_retriever(
-        search_kwargs={'k':selected}))
+# groq = ChatGroq(temperature=0,max_retries=0,model_name="mixtral-8x7b-32768")
+# groq2 = ChatGroq(api_key="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",temperature=0,max_retries=0,model_name="mixtral-8x7b-32768").with_fallbacks([groq])
 
-def compression(job_description,pdfs_dir):
-        pdfs_content = asyncio.run(main(pdfs_dir))
+google = ChatGoogleGenerativeAI(max_retries=0,temperature=0,model="gemini-1.5-flash",google_api_key=os.getenv("dgoogle_api_key"))
+google2 = ChatGoogleGenerativeAI(max_retries=0,temperature=0,model="gemini-1.5-flash",google_api_key=os.getenv("google_api_key")).with_fallbacks([google])
+# ,tool_choice="predict_bool"
+llm_with_tools = google2.bind_tools([cv_score])
 
-        print("Indexing...")
-        retriever = indexing(pdfs_content)
+job_des_cv_chain = RunnablePassthrough.assign(
+selection_Bool = RunnablePassthrough.assign(
+    source = (lambda x:x["source"]),
+    job_des = (lambda x:x["job_des"]),
+    cv = (lambda x:x["cv"])) | template | llm_with_tools | PydanticToolsParser(tools=[cv_score]))
 
-        print("Compression...")
-        compressed_docs = compression_retriever(retriever,len(pdfs_content)).invoke(job_description)
+def shortlist_cvs(cv_list,percentage):
+    scored_cvs = [(cv.get("source"),float(cv.get("selection_Bool")[0].score)) for cv in cv_list]
+    
+    # Sort CVs based on relevance scores in descending order
+    scored_cvs.sort(key=lambda x: x[1], reverse=True)
+    
+    # Calculate the number of CVs to shortlist based on the percentage
+    shortlist_count = int(len(cv_list) * percentage / 100)
+    
+    # Select the top N percent CVs
+    shortlisted_cvs = scored_cvs[:shortlist_count]
+    
+    return [cv[0] for cv in shortlisted_cvs]
 
-        shortlisted_cvs = [cv.metadata['source'] for cv in compressed_docs]
-        retriever.delete_collection()
-        return shortlisted_cvs
+def compression(pdf_dir,job_description,percentage):
+    pdfs_content = asyncio.run(main(pdf_dir,job_description))
+    cv_score_list = job_des_cv_chain.batch(pdfs_content)
+    shortlisted_cvs = shortlist_cvs(cv_score_list,percentage)
+    return shortlisted_cvs
