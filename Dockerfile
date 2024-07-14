@@ -23,10 +23,7 @@ RUN chown -R myuser:myuser /app
 USER myuser
 
 # Expose the port that the app runs on
-EXPOSE 7860
+EXPOSE 8000
 
 # Command to run the Uvicorn server
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7860"]
-
-# docker run -d --rm --name "pdfsummary" -e dgoogle_api_key=AIzaSyARfxSKQwobd0MNuOAt6yUjmNUFGX4k_eI -e google_api_key=AIzaSyARfxSKQwobd0MNuOAt6yUjmNUFGX4k_eI -p 8000:8000 cvscreening:latest
-# docker run -d --rm -p
+CMD ["uvicorn", "cvscreening.main:app", "--host", "0.0.0.0", "--port", "8000"]

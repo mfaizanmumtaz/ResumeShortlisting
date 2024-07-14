@@ -1,0 +1,1 @@
+from .core.shortlisting import compression,get_data
