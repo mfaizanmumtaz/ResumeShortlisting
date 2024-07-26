@@ -6,7 +6,6 @@ from typing import List
 
 app = FastAPI()
 
-# Get the secret key from environment variable
 SECRET_KEY = "123"
 
 
@@ -84,15 +83,10 @@ def upload_files(
         pdfs_paths.append(file_location)
 
     try:
-        pdfs_path_with_description = [
-            {"pdf_path": pdf_path, "job_des": job_description}
-            for pdf_path in pdfs_paths
-        ]
 
-        from .core import compression
+        from core import compression
 
-        # short_listed_files_paths = asyncio.run(compression(pdfs_path_with_description,percentage))
-        short_listed_files_paths = compression(pdfs_path_with_description, percentage)
+        short_listed_files_paths = compression(pdfs_paths, job_description, percentage)
 
         zip_filename = f"{main_path}/{str(uuid.uuid4())}.zip"
 
@@ -113,6 +107,7 @@ def upload_files(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# if __name__ == "__main__":
-#     import uvicorn
-#     uvicorn.run(app, host="0.0.0.0", port=8000)
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app, host="0.0.0.0", port=8000)
