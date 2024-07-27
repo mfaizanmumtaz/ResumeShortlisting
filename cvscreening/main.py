@@ -1,6 +1,6 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form, BackgroundTasks
 from fastapi.responses import FileResponse
-import shutil, os, uuid, asyncio, logging
+import shutil, os, uuid, logging
 from zipfile import ZipFile
 from typing import List
 
@@ -84,7 +84,7 @@ def upload_files(
 
     try:
 
-        from core import compression
+        from .core import compression
 
         short_listed_files_paths = compression(pdfs_paths, job_description, percentage)
 
@@ -105,9 +105,3 @@ def upload_files(
         logging.error(f"Error occurr-ed: {str(e)}")
         cleanup_directory(main_path)
         raise HTTPException(status_code=500, detail=str(e))
-
-
-if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -6,13 +6,17 @@ from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_core.documents import Document
 from langchain_core.documents import Document
 from langchain_community.document_loaders import PyMuPDFLoader
+
 from langchain_huggingface import HuggingFaceEmbeddings
-import warnings, uuid, os
+
+# from langchain_cohere import CohereEmbeddings
+import warnings, uuid
 from langchain_community.vectorstores import Chroma
 
 warnings.filterwarnings("ignore")
 
 embeddings = HuggingFaceEmbeddings()
+# embeddings = CohereEmbeddings()
 
 
 def get_data(file_path):

@@ -23,7 +23,8 @@ RUN chown -R myuser:myuser /app
 USER myuser
 
 # Expose the port that the app runs on
-EXPOSE 8000
+EXPOSE 8001
 
 # Command to run the Uvicorn server
-CMD ["uvicorn", "cvscreening.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# docker run --rm -d -p 8001:8001 cvscreening
+CMD ["uvicorn", "cvscreening.main:app", "--host", "0.0.0.0", "--port", "8001"]
